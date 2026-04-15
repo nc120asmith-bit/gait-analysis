@@ -2,24 +2,28 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Gait Analysis for PhD</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Gait Analysis Pro for PhD</title>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
   <style>
-    body { font-family: sans-serif; margin: 0; background: #111; color: white; text-align: center; }
-    #controls { padding: 10px; background: #333; position: fixed; top: 0; width: 100%; z-index: 10; }
-    button { padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 5px; border: none; }
-    .start { background: #2ecc71; color: white; }
-    .stop { background: #e74c3c; color: white; }
+    body { font-family: sans-serif; margin: 0; background: #000; color: white; overflow: hidden; position: fixed; width: 100%; }
+    #ui-panel { position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 8px; width: calc(100% - 40px); }
+    input { padding: 8px; width: 80px; font-size: 16px; border-radius: 4px; border: none; }
+    button { padding: 12px 20px; font-size: 16px; font-weight: bold; border-radius: 8px; border: none; margin-left: 5px; }
+    .start { background: #27ae60; color: white; }
+    .stop { background: #c0392b; color: white; }
     canvas { width: 100vw; height: 100vh; object-fit: contain; }
     video { display: none; }
+    #status { font-size: 12px; margin-top: 5px; color: #aaa; }
   </style>
 </head>
 <body>
-  <div id="controls">
-    <button id="recordBtn" class="start">計測開始 (Recording)</button>
-    <p id="status">ステータス: 待機中</p>
+  <div id="ui-panel">
+    ID: <input type="text" id="subjectId" value="A001">
+    <button id="recordBtn" class="start">計測開始</button>
+    <div id="status">待機中（背面カメラ起動）</div>
   </div>
   <video id="input_video"></video>
   <canvas id="output_canvas"></canvas>
@@ -30,6 +34,7 @@
     const canvasCtx = canvasElement.getContext('2d');
     const recordBtn = document.getElementById('recordBtn');
     const statusTxt = document.getElementById('status');
+    const subjectIdInput = document.getElementById('subjectId');
 
     let isRecording = false;
     let recordedData = [];
@@ -38,18 +43,11 @@
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-      
       if (results.poseLandmarks) {
-        drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
-        drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#FF0000', lineWidth: 2});
-
-        // 計測中の場合、データを保存
+        drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 3});
+        drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#FF0000', radius: 1});
         if (isRecording) {
-          const timestamp = Date.now();
-          recordedData.push({
-            time: timestamp,
-            landmarks: results.poseLandmarks
-          });
+          recordedData.push({ t: Date.now(), lm: results.poseLandmarks });
         }
       }
       canvasCtx.restore();
@@ -61,41 +59,44 @@
 
     const camera = new Camera(videoElement, {
       onFrame: async () => { await pose.send({image: videoElement}); },
-      width: 1280, height: 720
+      width: 1280, height: 720, facingMode: 'environment'
     });
     camera.start();
 
-    // 録画ボタンの処理
     recordBtn.addEventListener('click', () => {
       if (!isRecording) {
         isRecording = true;
         recordedData = [];
-        recordBtn.textContent = "計測停止・保存";
+        recordBtn.textContent = "停止・保存";
         recordBtn.className = "stop";
-        statusTxt.textContent = "ステータス: 記録中...";
+        statusTxt.textContent = "記録中... 利用者様が歩き終わるまで待機";
       } else {
         isRecording = false;
-        recordBtn.textContent = "計測開始 (Recording)";
+        recordBtn.textContent = "計測開始";
         recordBtn.className = "start";
-        statusTxt.textContent = "ステータス: 保存しました。";
+        statusTxt.textContent = "保存完了！";
         downloadCSV();
       }
     });
 
-    // データをCSVとしてダウンロード
     function downloadCSV() {
-      let csvContent = "data:text/csv;charset=utf-8,Time,Landmark_Index,X,Y,Z,Visibility\n";
-      recordedData.forEach(frame => {
-        frame.landmarks.forEach((lm, index) => {
-          csvContent += `${frame.time},${index},${lm.x},${lm.y},${lm.z},${lm.visibility}\n`;
+      const id = subjectIdInput.value || "unknown";
+      const now = new Date();
+      const timeStr = now.getFullYear() + (now.getMonth()+1).toString().padStart(2,'0') + now.getDate().toString().padStart(2,'0') + "_" + now.getHours().toString().padStart(2,'0') + now.getMinutes().toString().padStart(2,'0');
+      
+      let csv = "Time,Index,X,Y,Z,V\n";
+      recordedData.forEach(f => {
+        f.lm.forEach((l, i) => {
+          csv += `${f.t},${i},${l.x.toFixed(4)},${l.y.toFixed(4)},${l.z.toFixed(4)},${l.visibility.toFixed(4)}\n`;
         });
       });
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", "gait_data.csv");
-      document.body.appendChild(link);
-      link.click();
+
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.setAttribute('href', url);
+      a.setAttribute('download', `${id}_${timeStr}.csv`);
+      a.click();
     }
   </script>
 </body>
