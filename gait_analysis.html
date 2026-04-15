@@ -3,18 +3,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Gait Analysis Pro for PhD</title>
+  <title>Gait Analysis - Vertical</title>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
   <style>
-    body { font-family: sans-serif; margin: 0; background: #000; color: white; overflow: hidden; position: fixed; width: 100%; }
+    body { font-family: sans-serif; margin: 0; background: #000; color: white; overflow: hidden; position: fixed; width: 100vw; height: 100vh; }
     #ui-panel { position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 8px; width: calc(100% - 40px); }
-    input { padding: 8px; width: 80px; font-size: 16px; border-radius: 4px; border: none; }
-    button { padding: 12px 20px; font-size: 16px; font-weight: bold; border-radius: 8px; border: none; margin-left: 5px; }
+    input { padding: 8px; width: 60px; font-size: 16px; border-radius: 4px; border: none; }
+    button { padding: 12px 15px; font-size: 16px; font-weight: bold; border-radius: 8px; border: none; }
     .start { background: #27ae60; color: white; }
     .stop { background: #c0392b; color: white; }
-    canvas { width: 100vw; height: 100vh; object-fit: contain; }
+    /* 映像を画面いっぱいに広げる設定 */
+    canvas { width: 100vw; height: 100vh; object-fit: cover; }
     video { display: none; }
     #status { font-size: 12px; margin-top: 5px; color: #aaa; }
   </style>
@@ -23,9 +24,9 @@
   <div id="ui-panel">
     ID: <input type="text" id="subjectId" value="A001">
     <button id="recordBtn" class="start">計測開始</button>
-    <div id="status">待機中（背面カメラ起動）</div>
+    <div id="status">背面カメラ待機中</div>
   </div>
-  <video id="input_video"></video>
+  <video id="input_video" playsinline></video>
   <canvas id="output_canvas"></canvas>
 
   <script>
@@ -40,12 +41,17 @@
     let recordedData = [];
 
     function onResults(results) {
+      // 画面のサイズに合わせてキャンバスの解像度を調整
+      canvasElement.width = results.image.width;
+      canvasElement.height = results.image.height;
+
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+      
       if (results.poseLandmarks) {
-        drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 3});
-        drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#FF0000', radius: 1});
+        drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
+        drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#FF0000', radius: 2});
         if (isRecording) {
           recordedData.push({ t: Date.now(), lm: results.poseLandmarks });
         }
@@ -57,9 +63,10 @@
     pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5 });
     pose.onResults(onResults);
 
+    // カメラの設定：解像度を指定せず、向きだけを指定
     const camera = new Camera(videoElement, {
       onFrame: async () => { await pose.send({image: videoElement}); },
-       facingMode: 'environment'
+      facingMode: 'environment'
     });
     camera.start();
 
@@ -69,12 +76,12 @@
         recordedData = [];
         recordBtn.textContent = "停止・保存";
         recordBtn.className = "stop";
-        statusTxt.textContent = "記録中... 利用者様が歩き終わるまで待機";
+        statusTxt.textContent = "記録中...";
       } else {
         isRecording = false;
         recordBtn.textContent = "計測開始";
         recordBtn.className = "start";
-        statusTxt.textContent = "保存完了！";
+        statusTxt.textContent = "保存しました";
         downloadCSV();
       }
     });
